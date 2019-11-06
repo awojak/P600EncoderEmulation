@@ -21,10 +21,9 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
+#include <tools.h>
 #include "main.h"
-
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
+#include "task_scheduler.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -54,11 +53,71 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 #define uart_buff_size 3
-uint8_t uart_buff[uart_buff_size];
+char uart_buff[uart_buff_size];
 
 SchedulerTasks stsTasks;
-Task ledTask, commandTask;
+Task ledTask, commandTask, displayValueTask;
 
+//zmienna przechowuj¹ca okres przebiegu
+volatile uint32_t IC_Val1 = 0;
+//zmienna przechowuj¹ca wype³nienie przebiegu
+volatile uint32_t IC_Val2 = 0;
+volatile uint32_t Frequency = 0;
+volatile uint32_t Duty_Cycle = 0;
+volatile uint32_t Difference = 0;
+volatile uint8_t captured = 0; // 0- not captured, 1- captured
+
+char text[12] = {0};
+
+//Input capture callback
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+{
+	//Rising edge interrupt
+	if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
+	{
+		if(captured==0)
+		{
+			//read captured value
+			IC_Val1 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1); //first value
+			captured = 1;
+		} else if (captured)
+		{
+			//read second
+			IC_Val2 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+
+			if(IC_Val2 > IC_Val1)
+			{
+				Difference = IC_Val2 - IC_Val1;
+			} else if (IC_Val2 < IC_Val1)
+			{
+				Difference = ((0xffff-IC_Val1)+IC_Val2) +1;
+
+			} else
+			{
+				Difference  = 800001;
+			}
+			//calculate duty cycle
+			//Duty_Cycle = (IC_Val2*100/IC_Val1);
+
+			//calculate frequency
+			Frequency = (800000/Difference);
+			//timer clock is 2x PCLK1 clock, thats why 2x
+			captured = 0;
+		}
+	}
+}
+
+void displayValue()
+{
+	HAL_GPIO_TogglePin(GPIOD, LD5_Pin);
+	print("Frequency = ");
+	IntToChar(Frequency, text);
+	print(text);
+	print("Hz, Duty Cycle = ");
+	IntToChar(Duty_Cycle, text);
+	print(text);
+	print("%\r\n");
+}
 
 /**
  *  Led task
@@ -70,17 +129,14 @@ void led()
 
 void command()
 {
-	HAL_GPIO_TogglePin(GPIOD, LD5_Pin);
-
 	if(uart_buff[0] == 'S')
 	{
 		htim7.Instance->ARR = (((uint16_t)uart_buff[1] << 8) | (uint16_t)uart_buff[2]);
 	}
 	print("Get Command: ");
-	print(uart_buff[0]);
-	print(uart_buff[1]);
-	print(uart_buff[2]);
-	print("Get Command: \n");
+	print((const char*)&uart_buff[0]);
+	print((const char*)&uart_buff[1]);
+	print((const char*)&uart_buff[2]);
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
@@ -88,7 +144,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 	//UART data ready do command task
 	TaskEventTrigger(&commandTask);
 	//Receive next data
-	HAL_UART_Receive_IT(&huart2, uart_buff, uart_buff_size);
+	HAL_UART_Receive_IT(&huart2, (uint8_t *)&uart_buff, uart_buff_size);
 	//TODO: Implement timeout if UART error appear
 }
 
@@ -112,28 +168,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 	}
 
-}
-
-uint32_t IC_Val1=0;
-uint32_t IC_Val2=0;
-uint32_t Frequency=0;
-uint32_t Duty_Cycle=0;
-
-HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
-{
-	if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
-	{
-		IC_Val1 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
-
-		if(IC_Val1!= 0)
-		{
-			IC_Val2 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
-
-			Duty_Cycle = (IC_Val2*100/IC_Val1);
-
-			Frequency = (2*HAL_RCC_GetPCLK2Freq()/IC_Val1);
-		}
-	}
 }
 
 /* USER CODE END PFP */
@@ -186,7 +220,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  print("System Initialize\n");
+
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -205,31 +239,43 @@ int main(void)
   MX_USART2_UART_Init();
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
-
+  print("System Initialized\r\n");
   SchedulerInit(&stsTasks);
-  print("Scheduler Initialize\n");
+  print("Scheduler Initialized\r\n");
   TaskCreate(&stsTasks, &ledTask, &led, 254);
-  print("Create LED Task\n");
+  print("Created LED Task\r\n");
   TaskCreate(&stsTasks, &commandTask, &command, 10);
-  print("Create Command Task\n");
+  print("Created Command Task\r\n");
+  TaskCreate(&stsTasks, &displayValueTask, &displayValue,200);
+  print("Created Display Value Task\r\n");
   TaskStart(&ledTask, 500);
-  print("Start LED Task\n");
+  print("Start LED Task\r\n");
   TaskEventStart(&commandTask);
-  print("Start Command Task\n");
+  print("Start Command Task\r\n");
+  TaskStart(&displayValueTask, 1000);
+  print("Start Display Value Task\r\n");
 
   HAL_TIM_Base_Start_IT(&htim7);
-  HAL_UART_Receive_IT(&huart2, uart_buff, uart_buff_size);
+  //HAL_UART_Receive_IT(&huart2, (uint8_t *)&uart_buff, uart_buff_size);
+
+  //Start Capture Input timer
+  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
+  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_2);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  print("Start Scheduler\n");
+  print("Start Scheduler\r\n");
   Scheduler(&stsTasks);
 
+  //Program never should go here
+  while(1)
+  {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
+  }
   /* USER CODE END 3 */
 }
 
@@ -345,10 +391,10 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 1 */
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 0;
+  htim1.Init.Prescaler = 209;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim1.Init.Period = 0xffff;
-  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV4;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
@@ -460,7 +506,7 @@ static void MX_TIM7_Init(void)
   htim7.Instance = TIM7;
   htim7.Init.Prescaler = 8399;
   htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim7.Init.Period = 9999;
+  htim7.Init.Period = 1;
   htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
   {

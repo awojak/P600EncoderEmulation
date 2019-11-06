@@ -54,3 +54,4 @@ dkms.conf
 SW4STM32/Epson_SCP600_Encoder_Emulation/Debug/
 Documentation/
 Debug/
+.settings/

@@ -20,7 +20,7 @@ void SchedulerInit(SchedulerTasks* sts)
 
 void TaskTick()
 {
-	//increment task tick
+	//increment scheduler tick
 	tick++;
 }
 
@@ -35,12 +35,11 @@ TaskCreateState TaskCreate(SchedulerTasks* sts, Task *t, void *fun_ptr, unsigned
 		t->period = -1;
 		t->priority = priority;
 		t->next_exe = 0;
-		//increment tasks counter
-		sts->tasks_count++;
 		index = sts->tasks_count;
 		//store task reference
 		sts->tasks[index] = t;
-
+		//increment tasks counter
+		sts->tasks_count++;
 		return CreatedTaskSuccessfully;
 	} else
 	{
@@ -95,12 +94,13 @@ void Scheduler(SchedulerTasks* sts)
 	{
 		if(sts->tasks[i]->active == TaskActive)
 		{
-			if((tick >= sts->tasks[i]->next_exe) && sts->tasks[i]->period>=0)
+			if((tick >= sts->tasks[i]->next_exe) && (sts->tasks[i]->period>=0))
 			{
-				//Do task
-				sts->tasks[i]->fun_ptr();
 				//Save next execution
 				sts->tasks[i]->next_exe = tick + sts->tasks[i]->period;
+				//Do task
+				sts->tasks[i]->fun_ptr();
+
 
 			}
 			if(sts->tasks[i]->do_task)
