@@ -21,8 +21,11 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
-#include <tools.h>
 #include "main.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+#include "tools.h"
 #include "task_scheduler.h"
 /* USER CODE END Includes */
 
@@ -45,7 +48,6 @@
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
-TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim6;
 TIM_HandleTypeDef htim7;
 
@@ -58,65 +60,33 @@ char uart_buff[uart_buff_size];
 SchedulerTasks stsTasks;
 Task ledTask, commandTask, displayValueTask;
 
-//zmienna przechowuj¹ca okres przebiegu
-volatile uint32_t IC_Val1 = 0;
-//zmienna przechowuj¹ca wype³nienie przebiegu
-volatile uint32_t IC_Val2 = 0;
-volatile uint32_t Frequency = 0;
-volatile uint32_t Duty_Cycle = 0;
-volatile uint32_t Difference = 0;
-volatile uint8_t captured = 0; // 0- not captured, 1- captured
-
+//Variable for IntToChar function
 char text[12] = {0};
+
+__IO uint16_t AdcRawValue[2];
+int AdcVolage1, AdcVolage2;
 
 //Input capture callback
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 {
-	//Rising edge interrupt
-	if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
-	{
-		if(captured==0)
-		{
-			//read captured value
-			IC_Val1 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1); //first value
-			captured = 1;
-		} else if (captured)
-		{
-			//read second
-			IC_Val2 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
 
-			if(IC_Val2 > IC_Val1)
-			{
-				Difference = IC_Val2 - IC_Val1;
-			} else if (IC_Val2 < IC_Val1)
-			{
-				Difference = ((0xffff-IC_Val1)+IC_Val2) +1;
-
-			} else
-			{
-				Difference  = 800001;
-			}
-			//calculate duty cycle
-			//Duty_Cycle = (IC_Val2*100/IC_Val1);
-
-			//calculate frequency
-			Frequency = (800000/Difference);
-			//timer clock is 2x PCLK1 clock, thats why 2x
-			captured = 0;
-		}
-	}
 }
 
+/**
+ * Display Value task
+ */
 void displayValue()
 {
+	AdcVolage1 = (AdcRawValue[0] * 3300 ) / 255;
+	AdcVolage2 = (AdcRawValue[1] * 3300 ) / 255;
 	HAL_GPIO_TogglePin(GPIOD, LD5_Pin);
-	print("Frequency = ");
-	IntToChar(Frequency, text);
+	print("ADC1_IN1 = ");
+	IntToChar(AdcVolage1, text);
 	print(text);
-	print("Hz, Duty Cycle = ");
-	IntToChar(Duty_Cycle, text);
+	print("V, ADC1_IN2 = ");
+	IntToChar(AdcVolage2, text);
 	print(text);
-	print("%\r\n");
+	print("V\r\n");
 }
 
 /**
@@ -127,6 +97,9 @@ void led()
 	HAL_GPIO_TogglePin(GPIOD, LD6_Pin);
 }
 
+/**
+ * Command task
+ */
 void command()
 {
 	if(uart_buff[0] == 'S')
@@ -158,7 +131,6 @@ static void MX_TIM7_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
@@ -237,7 +209,6 @@ int main(void)
   MX_ADC1_Init();
   MX_TIM6_Init();
   MX_USART2_UART_Init();
-  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
   print("System Initialized\r\n");
   SchedulerInit(&stsTasks);
@@ -252,16 +223,13 @@ int main(void)
   print("Start LED Task\r\n");
   TaskEventStart(&commandTask);
   print("Start Command Task\r\n");
-  TaskStart(&displayValueTask, 1000);
+  TaskStart(&displayValueTask, 500);
   print("Start Display Value Task\r\n");
 
   HAL_TIM_Base_Start_IT(&htim7);
   //HAL_UART_Receive_IT(&huart2, (uint8_t *)&uart_buff, uart_buff_size);
 
-  //Start Capture Input timer
-  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
-  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_2);
-
+  HAL_ADC_Start_DMA(&hadc1, (uint32_t *)AdcRawValue, 2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -342,15 +310,15 @@ static void MX_ADC1_Init(void)
   */
   hadc1.Instance = ADC1;
   hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV8;
-  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc1.Init.ScanConvMode = DISABLE;
+  hadc1.Init.Resolution = ADC_RESOLUTION_8B;
+  hadc1.Init.ScanConvMode = ENABLE;
   hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 1;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.NbrOfConversion = 2;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
@@ -360,7 +328,15 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_1;
   sConfig.Rank = 1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  sConfig.SamplingTime = ADC_SAMPLETIME_144CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+  */
+  sConfig.Channel = ADC_CHANNEL_2;
+  sConfig.Rank = 2;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -368,83 +344,6 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
-
-}
-
-/**
-  * @brief TIM1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM1_Init(void)
-{
-
-  /* USER CODE BEGIN TIM1_Init 0 */
-
-  /* USER CODE END TIM1_Init 0 */
-
-  TIM_SlaveConfigTypeDef sSlaveConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_IC_InitTypeDef sConfigIC = {0};
-
-  /* USER CODE BEGIN TIM1_Init 1 */
-
-  /* USER CODE END TIM1_Init 1 */
-  htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 209;
-  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 0xffff;
-  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV4;
-  htim1.Init.RepetitionCounter = 0;
-  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_IC_Init(&htim1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sSlaveConfig.SlaveMode = TIM_SLAVEMODE_RESET;
-  sSlaveConfig.InputTrigger = TIM_TS_TI2FP2;
-  sSlaveConfig.TriggerPolarity = TIM_INPUTCHANNELPOLARITY_FALLING;
-  sSlaveConfig.TriggerFilter = 0;
-  if (HAL_TIM_SlaveConfigSynchro(&htim1, &sSlaveConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
-  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
-  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
-  sConfigIC.ICFilter = 0;
-  if (HAL_TIM_IC_ConfigChannel(&htim1, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_FALLING;
-  if (HAL_TIM_IC_ConfigChannel(&htim1, &sConfigIC, TIM_CHANNEL_2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
-  if (HAL_TIM_IC_ConfigChannel(&htim1, &sConfigIC, TIM_CHANNEL_3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_FALLING;
-  if (HAL_TIM_IC_ConfigChannel(&htim1, &sConfigIC, TIM_CHANNEL_4) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM1_Init 2 */
-
-  /* USER CODE END TIM1_Init 2 */
 
 }
 
@@ -506,7 +405,7 @@ static void MX_TIM7_Init(void)
   htim7.Instance = TIM7;
   htim7.Init.Prescaler = 8399;
   htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim7.Init.Period = 1;
+  htim7.Init.Period = 9999;
   htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
   {
@@ -586,17 +485,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
-  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOD, LD4_Pin|LD3_Pin|LD5_Pin|LD6_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin : B1_Pin */
-  GPIO_InitStruct.Pin = B1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_EVT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : BOOT1_Pin */
   GPIO_InitStruct.Pin = BOOT1_Pin;
