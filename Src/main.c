@@ -63,7 +63,7 @@ Task ledTask, commandTask, displayValueTask;
 //Variable for IntToChar function
 char text[12] = {0};
 
-__IO uint16_t AdcRawValue[2];
+__IO uint16_t AdcRawValue[2] = {0};
 int AdcVolage1, AdcVolage2;
 
 //Input capture callback
@@ -79,7 +79,6 @@ void displayValue()
 {
 	AdcVolage1 = (AdcRawValue[0] * 3300 ) / 255;
 	AdcVolage2 = (AdcRawValue[1] * 3300 ) / 255;
-	HAL_GPIO_TogglePin(GPIOD, LD5_Pin);
 	print("ADC1_IN1 = ");
 	IntToChar(AdcVolage1, text);
 	print(text);
@@ -226,10 +225,13 @@ int main(void)
   TaskStart(&displayValueTask, 500);
   print("Start Display Value Task\r\n");
 
-  HAL_TIM_Base_Start_IT(&htim7);
+
   //HAL_UART_Receive_IT(&huart2, (uint8_t *)&uart_buff, uart_buff_size);
 
   HAL_ADC_Start_DMA(&hadc1, (uint32_t *)AdcRawValue, 2);
+
+  HAL_TIM_Base_Start_IT(&htim6);
+  //HAL_TIM_Base_Start_IT(&htim7);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -364,10 +366,12 @@ static void MX_TIM6_Init(void)
   /* USER CODE BEGIN TIM6_Init 1 */
 
   /* USER CODE END TIM6_Init 1 */
+
+  // Timer 6 generate 16kHz interrupt for check input motor voltage and change frequency of the encoder
   htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 8399;
+  htim6.Init.Prescaler = 1311;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 999;
+  htim6.Init.Period = 3;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -403,9 +407,9 @@ static void MX_TIM7_Init(void)
 
   /* USER CODE END TIM7_Init 1 */
   htim7.Instance = TIM7;
-  htim7.Init.Prescaler = 8399;
+  htim7.Init.Prescaler = 7;
   htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim7.Init.Period = 9999;
+  htim7.Init.Period = 4200;
   htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
   {

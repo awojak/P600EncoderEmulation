@@ -100,8 +100,6 @@ void Scheduler(SchedulerTasks* sts)
 				sts->tasks[i]->next_exe = tick + sts->tasks[i]->period;
 				//Do task
 				sts->tasks[i]->fun_ptr();
-
-
 			}
 			if(sts->tasks[i]->do_task)
 			{

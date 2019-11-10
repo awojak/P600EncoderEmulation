@@ -44,16 +44,6 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-
-/* USER CODE END PV */
-
-/* Private function prototypes -----------------------------------------------*/
-/* USER CODE BEGIN PFP */
-
-/* USER CODE END PFP */
-
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
 //Encoder waveform pattern for positive and negative signals
 uint32_t pattern_pos[] = { (PIN_RESET(ENC_PIN_A) | PIN_RESET(ENC_PIN_B)),
 								 (PIN_SET(ENC_PIN_A) | PIN_RESET(ENC_PIN_B)),
@@ -66,15 +56,30 @@ uint32_t pattern_neg[] = { (PIN_RESET(ENC_PIN_A) | PIN_SET(ENC_PIN_B)),
 								 (PIN_RESET(ENC_PIN_A) | PIN_RESET(ENC_PIN_B))};
 const int pattern_size = 4;
 int pattern_index = 0;
-int direction = 1; // 1 positive, -1 negative
+int direction = 1; // 1 positive, 0 negative
+short int motor_voltage = 0;
+uint8_t encoder_status = 0; // 1 - start, 0 - stop
+uint16_t timer_ARR = 0; //ARR value for timer
+int encoder_pos = 0;
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+/* USER CODE BEGIN PFP */
+
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
 extern DMA_HandleTypeDef hdma_adc1;
 extern TIM_HandleTypeDef htim6;
 extern TIM_HandleTypeDef htim7;
-/* USER CODE BEGIN EV */
 
+/* USER CODE BEGIN EV */
+extern __IO uint16_t AdcRawValue[2];
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -219,9 +224,47 @@ void SysTick_Handler(void)
 void TIM6_DAC_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM6_DAC_IRQn 0 */
+	HAL_GPIO_TogglePin(GPIOD, LD5_Pin);
+	motor_voltage = (short int) (AdcRawValue[0] - AdcRawValue[1]);
 
+	if(motor_voltage<0)
+	{
+		direction = 0; //use negative pattern
+		motor_voltage *= -1; //remove sign
+	} else
+		direction = 1; //use positive pattern
+	//encoder lower enable threshold
+	if(motor_voltage <= 39)
+	{
+		//If timer enabled, stop it
+		if(encoder_status)
+		{
+			HAL_TIM_Base_Stop_IT(&htim7);
+			encoder_status = 0;
+		}
+	} else {
+		//value above lower threshold, generate encoder signal
+
+		//TODO use equation to calculate frequency
+		if(motor_voltage > 39 && motor_voltage <= 54)
+			htim7.Instance->ARR = 4200; //2.5kHz
+		else if(motor_voltage >= 54)
+			htim7.Instance->ARR = 300; //35kHz
+
+		//If timer disabled, start it
+		if(!encoder_status)
+		{
+			HAL_TIM_Base_Start_IT(&htim7);
+			encoder_status = 1;
+		}
+	}
+
+  __HAL_TIM_CLEAR_IT(&htim6, TIM_IT_UPDATE);
+
+  //Remove below HAL_TIM_IRQHandler(&htim6); to do faster
   /* USER CODE END TIM6_DAC_IRQn 0 */
-  HAL_TIM_IRQHandler(&htim6);
+
+  //HAL_TIM_IRQHandler(&htim6);
   /* USER CODE BEGIN TIM6_DAC_IRQn 1 */
 
   /* USER CODE END TIM6_DAC_IRQn 1 */
@@ -235,14 +278,19 @@ void TIM7_IRQHandler(void)
   /* USER CODE BEGIN TIM7_IRQn 0 */
   if(direction == 1) {
 	  ENC_GPIO->BSRR = pattern_pos[pattern_index];
+	  encoder_pos++;
   } else {
 	  ENC_GPIO->BSRR = pattern_neg[pattern_index];
+	  encoder_pos--;
   }
 
   pattern_index++;
   pattern_index = pattern_index % pattern_size;
+
+  __HAL_TIM_CLEAR_IT(&htim7, TIM_IT_UPDATE);
+  //Remove below HAL_TIM_IRQHandler(&htim6); to do faster
   /* USER CODE END TIM7_IRQn 0 */
-  HAL_TIM_IRQHandler(&htim7);
+  //HAL_TIM_IRQHandler(&htim7);
   /* USER CODE BEGIN TIM7_IRQn 1 */
 
   /* USER CODE END TIM7_IRQn 1 */
