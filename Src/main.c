@@ -212,7 +212,7 @@ int main(void)
   print("System Initialized\r\n");
   SchedulerInit(&stsTasks);
   print("Scheduler Initialized\r\n");
-  TaskCreate(&stsTasks, &ledTask, &led, 254);
+  TaskCreate(&stsTasks, &ledTask, &led, 255);
   print("Created LED Task\r\n");
   TaskCreate(&stsTasks, &commandTask, &command, 10);
   print("Created Command Task\r\n");
@@ -237,11 +237,10 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   print("Start Scheduler\r\n");
-  Scheduler(&stsTasks);
 
-  //Program never should go here
   while(1)
   {
+	  Scheduler(&stsTasks);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

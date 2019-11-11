@@ -21,7 +21,8 @@ extern "C" {
 
 //simple task structure
 typedef enum eTaskActiveState {TaskInactive, TaskActive} TaskActiveState;
-typedef enum eTaskCreateState {CreatedTaskUnsuccessfully = -1, CreatedTaskSuccessfully = 0} TaskCreateState;
+typedef enum eTaskCreateState {CreatedTaskUnsuccessfully = -1, CreatedTaskSuccessfully = 0, CreatedTaskExist} TaskCreateState;
+typedef enum eTaskRemoveState {RemovedTaskUnsuccessfully = -1, RemovedTaskSuccessfully = 0} TaskRemoveState;
 
 typedef struct sTask {
 	int id;			//32 bit task id
@@ -32,6 +33,7 @@ typedef struct sTask {
 	volatile char do_task;	//0 - wait, others - execute immediately
 	void (*fun_ptr)(void); //function for task
 	//TODO: Implement timeout function to check if everything ok with task
+	//TODO: Add scheduler task pointer to now where task is added
 } Task;
 
 typedef struct sScheduler {
@@ -42,6 +44,8 @@ typedef struct sScheduler {
 void SchedulerInit(SchedulerTasks* sts);
 void TaskTick();
 TaskCreateState TaskCreate(SchedulerTasks* sts, Task *t, void *fun_ptr, unsigned char priority);
+TaskRemoveState TaskRemove(SchedulerTasks* sts, Task *t);
+int TaskChangePriority(SchedulerTasks* sts, Task *t, unsigned char priority);
 void TaskStart(Task* t, int period);
 void TaskEventStart(Task* t);
 void TaskEventTrigger(Task* t);
